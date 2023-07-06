@@ -1,0 +1,129 @@
+Greyhole Installation Instructions
+==================================
+
+Greyhole comes as RPM or DEB packages. If your distribution supports those, you should definitely install one of them.  
+To do so, you can use this script:
+
+```bash
+curl -Ls http://bit.ly/greyhole-package | sudo bash
+```
+
+After installing, look in `/usr/share/greyhole/USAGE` (or online https://raw.github.com/gboudreau/Greyhole/master/USAGE) for configuration instructions.  
+If you can't install a pre-packaged version, follow the steps below to install from source.
+
+The following instructions have been tested on Fedora 12, and Ubuntu 9 & 10.  
+If you know what you're doing, you should have no problem installing on any other Linux variant.
+
+1. Install the required applications: PHP 7+ (cli) with MySQL & mbstring extensions, MySQL server, Samba, rsync, GCC (etc.):
+
+	- Fedora: `yum -y install mysql-server php php-mysql php-mbstring php-intl samba samba-common php-pear rsync lsof`
+	- Ubuntu: `apt-get -y install mysql-server php-cli php-mysql php-mysqlnd php-mbstring php-intl samba samba-common samba-common-bin samba-vfs-modules php-pear rsync lsof sysstat`
+
+	- Note: you might need to install mariadb-server, if mysql-server is not available. Those two are equivalent.
+	- Note 2: samba-vfs-modules might not be needed, but if it is available in your repo, it is required.
+
+2. Install Greyhole (as root):
+
+	- Download the latest "greyhole-[VERSION].tar.gz" file from https://github.com/gboudreau/Greyhole/releases
+	(Don't use the "Source Code" files.)
+
+	```bash
+	tar zxf greyhole-*.tar.gz && rm -f greyhole-*.tar.gz
+	cd greyhole-*
+	GREYHOLE_INSTALL_DIR=`pwd`
+	mkdir -p /var/spool/greyhole
+	chmod 777 /var/spool/greyhole
+	mkdir -p /usr/share/greyhole
+	install -m 0755 -D -p greyhole /usr/bin
+	install -m 0755 -D -p greyhole-dfree /usr/bin
+	install -m 0755 -D -p greyhole-php /usr/bin
+	install -m 0755 -D -p greyhole-dfree.php /usr/share/greyhole
+	install -m 0644 -D -p schema-mysql.sql /usr/share/greyhole
+	install -m 0644 -D -p greyhole.example.conf /usr/share/greyhole
+	install -m 0644 -D -p greyhole.example.conf /etc/greyhole.conf
+	install -m 0644 -D -p logrotate.greyhole /etc/logrotate.d/greyhole
+	install -m 0644 -D -p greyhole.cron.d /etc/cron.d/greyhole
+	install -m 0755 -D -p greyhole.cron.weekly /etc/cron.weekly/greyhole
+	install -m 0755 -D -p greyhole.cron.daily /etc/cron.daily/greyhole
+	cp -r web-app /usr/share/greyhole/web-app
+	install -m 0755 -D -p scripts-examples/greyhole_file_changed.sh /usr/share/greyhole/scripts-examples
+	install -m 0755 -D -p scripts-examples/greyhole_idle.sh /usr/share/greyhole/scripts-examples
+	install -m 0755 -D -p scripts-examples/greyhole_notify_error.sh /usr/share/greyhole/scripts-examples
+	install -m 0755 -D -p scripts-examples/greyhole_send_fsck_report.sh /usr/share/greyhole/scripts-examples
+	install -m 0755 -D -p scripts-examples/greyhole_sysadmin_notification.sh /usr/share/greyhole/scripts-examples
+	install -m 0644 -D -p USAGE /usr/share/greyhole
+	install -m 0755 -D -p build_vfs.sh /usr/share/greyhole
+	install -m 0644 -D -p docs/greyhole.1.gz /usr/share/man/man1/
+	install -m 0644 -D -p docs/greyhole-dfree.1.gz /usr/share/man/man1/
+	install -m 0644 -D -p docs/greyhole.conf.5.gz /usr/share/man/man5/
+
+	# What version of Samba are you running ?
+	SMB_VERSION="`smbd --version | awk '{print $2}' | awk -F'-' '{print $1}' | awk -F'.' '{print $1,$2}' | tr ' ' .`"
+	echo "You appear to be running Samba $SMB_VERSION"
+
+	if [ -d /usr/lib/x86_64-linux-gnu/samba/vfs ] || [ $(uname -m) = "x86_64" ] ; then
+		LIBDIR="/usr/lib64"
+	elif [ -d /usr/lib/aarch64-linux-gnu ] ; then
+      	LIBDIR="/usr/lib/aarch64-linux-gnu"
+    else
+		LIBDIR="/usr/lib"
+	fi
+	mkdir "$LIBDIR/greyhole"
+	cp samba-module/bin/$SMB_VERSION/greyhole-$(uname -m).so "$LIBDIR/greyhole/greyhole-samba${SMB_VERSION//.}.so"
+
+	# Install the start script
+	# For SysVinit systems: install the initd script:
+	install -m 0755 -D -p initd_script.sh /etc/init.d/greyhole
+
+	# For Upstart systems: install the Upstart script:
+	install -m 0644 -D -p upstart.conf /etc/init/greyhole.conf
+
+	# For Systemd systems: install the service
+	install -m 0644 -D -p greyhole.systemd /usr/lib/systemd/system/greyhole.service
+	```
+
+	- Fedora: `service smb restart`
+	- Ubuntu (14-): `/etc/init.d/samba restart`, or `restart smbd`
+	- Ubuntu (15+): `/etc/init.d/smbd restart`
+	- Debian: `service samba restart`
+
+3. For Samba 4.19 and later: The greyhole.so files packaged with Greyhole might not work on your system.  
+   You'll need to compile your own VFS module.
+
+	- Fedora: `sudo yum -y install patch gcc python-devel gnutls-devel make rpcgen zlib-devel e2fsprogs-devel heimdal-devel`
+	- Ubuntu/Debian: `sudo apt -y install build-essential python3-dev libgnutls28-dev pkg-config flex locales comerr-dev heimdal-multidev`
+   
+	```bash
+	cp $GREYHOLE_INSTALL_DIR/samba-module/vfs_greyhole-samba-4.x.c $GREYHOLE_INSTALL_DIR/samba-module/vfs_greyhole-samba-4.17.c
+	cp $GREYHOLE_INSTALL_DIR/samba-module/wscript-samba-4.x.patch $GREYHOLE_INSTALL_DIR/samba-module/wscript-samba-4.17.patch
+	$GREYHOLE_INSTALL_DIR/build_vfs.sh current
+ 	```
+
+4. Add Greyhole to services that start on boot:
+
+	- Fedora: `chkconfig --add greyhole; chkconfig greyhole on`
+	- Ubuntu (< 10): `update-rc.d greyhole defaults 98 20`
+	- Ubuntu (10-14): [nothing to do]
+	- Ubuntu (15+): `update-rc.d greyhole defaults`
+	- Debian: `update-rc.d greyhole defaults`
+	- Systemd: `systemctl enable greyhole`
+
+5. Work around problems with the CIFS client (as root):  
+    - Ref: http://blog.dhampir.no/content/cifs-vfs-no-response-for-cmd-n-mid
+	- Note: The cron.d script added above includes an @reboot cron line to make this permanent.
+
+	```bash
+	if [ -f /proc/fs/cifs/OplockEnabled ]; then
+		modprobe cifs
+		echo 0 > /proc/fs/cifs/OplockEnabled
+	fi
+	if [ -f /sys/module/cifs/parameters/enable_oplocks ]; then
+		modprobe cifs enable_oplocks=0
+		echo 0 > /sys/module/cifs/parameters/enable_oplocks
+	fi
+ 	```
+
+You are now ready to configure and use Greyhole.  
+
+See the USAGE file for details: `/usr/share/greyhole/USAGE`  
+or online https://raw.github.com/gboudreau/Greyhole/master/USAGE

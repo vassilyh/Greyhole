@@ -1,0 +1,9 @@
+/var/log/greyhole.log
+/var/log/greyhole.err
+{
+	daily
+	missingok
+	rotate 60
+	compress
+	notifempty
+}
